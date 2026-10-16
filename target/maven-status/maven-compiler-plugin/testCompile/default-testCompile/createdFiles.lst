@@ -1,3 +1,4 @@
+com\jshell\expansion\ExpanderTest.class
+com\jshell\parser\ParserTest.class
 com\jshell\builtin\BuiltinTest.class
 com\jshell\lexer\LexerTest.class
-com\jshell\parser\ParserTest.class

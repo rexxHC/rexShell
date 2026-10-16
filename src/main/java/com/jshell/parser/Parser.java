@@ -192,7 +192,7 @@ public class Parser {
      */
     private Node parseSimpleCommand() {
         List<Assignment>  assignments = new ArrayList<>();
-        List<String>      words       = new ArrayList<>();
+        List<Word>        words       = new ArrayList<>();
         List<Redirection> redirects   = new ArrayList<>();
 
         // Leading assignment words (only before the first non-assignment WORD)
@@ -210,7 +210,7 @@ public class Parser {
 
         // Command name and arguments
         while (peek().type() == TokenType.WORD || peek().type() == TokenType.ASSIGNMENT_WORD) {
-            words.add(peek().value());
+            words.add(Word.fromToken(peek()));
             advance();
 
             // After each WORD we may encounter redirects interspersed with more words
@@ -222,7 +222,7 @@ public class Parser {
             throw new ParseException("Unexpected token: " + (t.isEof() ? "EOF" : t.value()), t.line(), t.column());
         }
 
-        return new SimpleCommand(assignments, words, redirects);
+        return SimpleCommand.of(assignments, words, redirects);
     }
 
     /**

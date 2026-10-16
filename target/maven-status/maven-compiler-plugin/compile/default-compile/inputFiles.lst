@@ -15,6 +15,13 @@ C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\environment
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\executor\ExecutionException.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\executor\Executor.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\executor\ProcessLauncher.java
+C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\expansion\ArithmeticExpander.java
+C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\expansion\CommandSubstitution.java
+C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\expansion\Expander.java
+C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\expansion\GlobExpander.java
+C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\expansion\ParameterExpander.java
+C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\expansion\TildeExpander.java
+C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\expansion\WordSplitter.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\lexer\Lexer.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\lexer\LexerException.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\lexer\Token.java
@@ -30,6 +37,7 @@ C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\parser\ast\
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\parser\ast\Redirection.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\parser\ast\SimpleCommand.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\parser\ast\Subshell.java
+C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\parser\ast\Word.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\parser\ParseException.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\parser\Parser.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\platform\LinuxPlatform.java
