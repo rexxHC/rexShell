@@ -58,6 +58,9 @@ public class BuiltinRegistry {
         reg.register(new PwdCommand());
         reg.register(new TrueCommand());
         reg.register(new FalseCommand());
+        reg.register(new ExportCommand());
+        reg.register(new UnsetCommand());
+        reg.register(new EnvCommand());
         return reg;
     }
 }

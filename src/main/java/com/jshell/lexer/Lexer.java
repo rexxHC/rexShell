@@ -7,24 +7,17 @@ import java.util.List;
  * Lexer (tokenizer) for JShell.
  *
  * <p>Converts a raw input string into a list of {@link Token}s.
- * This Phase 1 implementation handles:
+ * Handles:
  * <ul>
- *   <li>Basic word tokenization</li>
- *   <li>All shell operator recognition ({@code |}, {@code ||}, {@code &&}, {@code ;},
- *       {@code &}, {@code (}, {@code )}, {@code {}, {@code }}, {@code !})</li>
- *   <li>I/O redirect operators ({@code >}, {@code >>}, {@code <}, {@code <<},
- *       {@code <<<}, {@code 2>}, {@code 2>>}, {@code &>}, {@code &>>},
- *       {@code 2>&1}, {@code 1>&2}, {@code n>file}, {@code n<file})</li>
- *   <li>Single-quoted strings (literal content, Phase 2 full quoting)</li>
- *   <li>Double-quoted strings (basic grouping, expansion handled in Expander)</li>
- *   <li>Variable assignment detection ({@code NAME=value})</li>
- *   <li>Newline and EOF</li>
+ *   <li>Basic word tokenization with contiguous word merging (e.g. {@code foo"bar"'baz'})</li>
+ *   <li>Single quotes {@code '...'}: literal content, no expansion</li>
+ *   <li>Double quotes {@code "..."}: allows expansions, resolves escapes ({@code \"}, {@code \\}, {@code \$}, etc.)</li>
+ *   <li>ANSI-C quotes {@code $'...'}: resolves {@code \n}, {@code \t}, {@code \xHH}, {@code \0NNN}, unicode, etc.</li>
+ *   <li>Backslash escaping outside quotes ({@code \ } for literal spaces, line continuations)</li>
+ *   <li>Empty quoted strings ({@code ""} or {@code ''}) preserved as valid WORD tokens</li>
+ *   <li>All shell control and I/O redirection operators</li>
+ *   <li>Variable assignments ({@code NAME=value})</li>
  * </ul>
- *
- * <p>Quoting details (single and double quotes, backslash escaping) are
- * handled here at the token level — the resulting token {@code value} already
- * has outer quote characters removed and escape sequences resolved so that
- * downstream stages receive clean strings.
  */
 public class Lexer {
 
@@ -88,22 +81,22 @@ public class Lexer {
             return nextToken();
         }
 
-        // Operators that start with '&'
+        // Operators starting with '&'
         if (c == '&') {
             return readAmpOperator(tokenLine, tokenCol);
         }
 
-        // Operators that start with '|'
+        // Operators starting with '|'
         if (c == '|') {
             return readPipeOperator(tokenLine, tokenCol);
         }
 
-        // Operators that start with '<'
+        // Operators starting with '<'
         if (c == '<') {
             return readLtOperator(tokenLine, tokenCol);
         }
 
-        // Operators that start with '>' (plain, not preceded by digit — handled below)
+        // Operators starting with '>' (not preceded by explicit FD digit)
         if (c == '>') {
             return readGtOperator(tokenLine, tokenCol);
         }
@@ -115,10 +108,10 @@ public class Lexer {
         }
 
         // Parentheses and braces
-        if (c == '(') { advance(); return Token.of(TokenType.LPAREN,  "(", tokenLine, tokenCol); }
-        if (c == ')') { advance(); return Token.of(TokenType.RPAREN,  ")", tokenLine, tokenCol); }
-        if (c == '{') { advance(); return Token.of(TokenType.LBRACE,  "{", tokenLine, tokenCol); }
-        if (c == '}') { advance(); return Token.of(TokenType.RBRACE,  "}", tokenLine, tokenCol); }
+        if (c == '(') { advance(); return Token.of(TokenType.LPAREN, "(", tokenLine, tokenCol); }
+        if (c == ')') { advance(); return Token.of(TokenType.RPAREN, ")", tokenLine, tokenCol); }
+        if (c == '{') { advance(); return Token.of(TokenType.LBRACE, "{", tokenLine, tokenCol); }
+        if (c == '}') { advance(); return Token.of(TokenType.RBRACE, "}", tokenLine, tokenCol); }
 
         // Bang
         if (c == '!' && !isWordChar(peekAt(pos + 1))) {
@@ -126,7 +119,7 @@ public class Lexer {
             return Token.of(TokenType.BANG, "!", tokenLine, tokenCol);
         }
 
-        // Word (including quoted strings, $(...), etc.)
+        // Word (including quoted strings, $(...), assignments, etc.)
         return readWord(tokenLine, tokenCol);
     }
 
@@ -134,7 +127,6 @@ public class Lexer {
     // Operator readers
     // -----------------------------------------------------------------------
 
-    /** Handles: {@code &}, {@code &&}, {@code &>}, {@code &>>} */
     private Token readAmpOperator(int tl, int tc) {
         advance(); // consume '&'
         if (pos < input.length()) {
@@ -155,7 +147,6 @@ public class Lexer {
         return Token.of(TokenType.AMP, "&", tl, tc);
     }
 
-    /** Handles: {@code |}, {@code ||} */
     private Token readPipeOperator(int tl, int tc) {
         advance(); // consume '|'
         if (pos < input.length() && peek() == '|') {
@@ -165,7 +156,6 @@ public class Lexer {
         return Token.of(TokenType.PIPE, "|", tl, tc);
     }
 
-    /** Handles: {@code <}, {@code <<}, {@code <<<} */
     private Token readLtOperator(int tl, int tc) {
         advance(); // consume '<'
         if (pos < input.length() && peek() == '<') {
@@ -179,12 +169,6 @@ public class Lexer {
         return Token.of(TokenType.REDIRECT_IN, "<", tl, tc);
     }
 
-    /**
-     * Handles: {@code >}, {@code >>}.
-     * Note: digit-prefixed redirects ({@code 2>}, {@code 1>}) and
-     * FD duplications ({@code 2>&1}) are handled in {@link #readWord}
-     * when a digit is detected at the start of a potential word.
-     */
     private Token readGtOperator(int tl, int tc) {
         advance(); // consume '>'
         if (pos < input.length() && peek() == '>') {
@@ -195,109 +179,33 @@ public class Lexer {
     }
 
     // -----------------------------------------------------------------------
-    // Word reader
+    // Word reader with complete quoting and merging support
     // -----------------------------------------------------------------------
 
-    /**
-     * Reads a WORD or ASSIGNMENT_WORD token.
-     *
-     * <p>A word is terminated by whitespace, a newline, or an unquoted
-     * operator character. Quoted regions and {@code $()} are included
-     * verbatim (expansion happens later in the Expander).
-     */
     private Token readWord(int tl, int tc) {
-        StringBuilder raw   = new StringBuilder();
+        StringBuilder raw = new StringBuilder();
         StringBuilder value = new StringBuilder();
+        List<WordPart> parts = new ArrayList<>();
+        StringBuilder barePart = new StringBuilder();
 
         while (pos < input.length()) {
             char c = peek();
 
             // Whitespace or newline terminates a word
-            if (c == ' ' || c == '\t' || c == '\n') break;
-
-            // Unquoted operator characters terminate a word
-            if (isOperatorStart(c) && raw.length() > 0) break;
-
-            // Single-quoted string: '...' — content is literal
-            if (c == '\'') {
-                raw.append(c);
-                advance();
-                StringBuilder content = new StringBuilder();
-                while (pos < input.length() && peek() != '\'') {
-                    content.append(peek());
-                    raw.append(peek());
-                    advance();
-                }
-                if (pos >= input.length()) {
-                    throw new LexerException("Unterminated single quote", tl, tc);
-                }
-                raw.append('\'');
-                advance(); // closing quote
-                value.append(content);
-                continue;
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+                break;
             }
 
-            // Double-quoted string: "..." — keep the quotes so the Expander
-            // knows this region is double-quoted (expansions apply, word splitting does not)
-            if (c == '"') {
-                raw.append(c);
-                value.append(c);
-                advance();
-                while (pos < input.length()) {
-                    char d = peek();
-                    if (d == '"') break;
-                    if (d == '\\' && pos + 1 < input.length()) {
-                        char escaped = input.charAt(pos + 1);
-                        // Inside double quotes only \", \\, \$, \`, \<newline> are special
-                        if (escaped == '"' || escaped == '\\' || escaped == '$'
-                                || escaped == '`' || escaped == '\n') {
-                            raw.append('\\').append(escaped);
-                            if (escaped == '\n') {
-                                // line continuation — skip both chars
-                            } else {
-                                value.append(escaped);
-                            }
-                            advance(); advance();
-                            continue;
-                        }
-                    }
-                    raw.append(d);
-                    value.append(d);
-                    advance();
-                }
-                if (pos >= input.length()) {
-                    throw new LexerException("Unterminated double quote", tl, tc);
-                }
-                raw.append('"');
-                value.append('"');
-                advance(); // closing quote
-                continue;
+            // Unquoted operator character terminates a word (if we have read anything)
+            if (isOperatorStart(c) && (raw.length() > 0 || !parts.isEmpty())) {
+                break;
             }
 
-            // Backslash outside quotes: escape next char (line continuation if \<newline>)
-            if (c == '\\') {
-                raw.append(c);
-                advance();
-                if (pos >= input.length()) break;
-                char escaped = peek();
-                if (escaped == '\n') {
-                    // Line continuation: skip the newline, continue same word
-                    raw.append(escaped);
-                    advance();
-                    line++;
-                    col = 1;
-                } else {
-                    raw.append(escaped);
-                    value.append(escaped);
-                    advance();
-                }
-                continue;
-            }
-
-            // Digit followed by '>' or '<' at start of word → redirect with explicit FD
-            if (raw.length() == 0 && Character.isDigit(c)) {
-                // Look ahead to see if next non-digit is > or <
+            // Digit followed by '>' or '<' at the very start of a word -> redirect with explicit FD
+            if (raw.length() == 0 && parts.isEmpty() && Character.isDigit(c)) {
                 int savedPos = pos;
+                int savedLine = line;
+                int savedCol = col;
                 StringBuilder digits = new StringBuilder();
                 while (pos < input.length() && Character.isDigit(peek())) {
                     digits.append(peek());
@@ -308,21 +216,17 @@ public class Lexer {
                     advance();
                     String fdStr = digits.toString();
                     if (op == '>') {
-                        // Check for 2>&1 or 2>>
                         if (pos < input.length() && peek() == '>') {
                             advance();
                             return Token.of(TokenType.REDIRECT_FD_OUT, fdStr + ">>", tl, tc);
                         }
                         if (pos < input.length() && peek() == '&') {
                             advance();
-                            // Read the target FD
                             StringBuilder target = new StringBuilder();
                             while (pos < input.length() && Character.isDigit(peek())) {
                                 target.append(peek());
                                 advance();
                             }
-                            // e.g. "2>&1" stored as value="2>&1"
-                            // Special well-known forms:
                             String full = fdStr + ">&" + target;
                             if (fdStr.equals("2") && target.toString().equals("1")) {
                                 return Token.of(TokenType.REDIRECT_ERR_TO_OUT, full, tl, tc);
@@ -346,78 +250,305 @@ public class Lexer {
                         return Token.of(TokenType.REDIRECT_FD_IN, fdStr + "<", tl, tc);
                     }
                 } else {
-                    // Not a redirect — backtrack and treat digits as word chars
+                    // Backtrack and treat digits as normal characters
                     pos = savedPos;
-                    col = tc + (pos - savedPos); // approximate reset
+                    line = savedLine;
+                    col = savedCol;
+                    // c is still the current digit
                 }
             }
 
-            // Command substitution $(...) or ${ } — keep verbatim for Expander
+            // ANSI-C Quoting: $'...'
+            if (c == '$' && pos + 1 < input.length() && input.charAt(pos + 1) == '\'') {
+                flushBare(parts, barePart);
+                raw.append("$'");
+                advance(); // consume '$'
+                advance(); // consume '\''
+                StringBuilder ansiContent = new StringBuilder();
+                while (pos < input.length() && peek() != '\'') {
+                    char d = peek();
+                    if (d == '\\' && pos + 1 < input.length()) {
+                        raw.append(d);
+                        advance(); // consume '\'
+                        char escaped = peek();
+                        raw.append(escaped);
+                        advance(); // consume escaped char
+                        String resolved = resolveAnsiCEscape(escaped, raw);
+                        ansiContent.append(resolved);
+                        continue;
+                    }
+                    raw.append(d);
+                    ansiContent.append(d);
+                    advance();
+                }
+                if (pos >= input.length()) {
+                    throw new LexerException("Unterminated ANSI-C quote", tl, tc);
+                }
+                raw.append('\'');
+                advance(); // consume closing '\''
+                value.append(ansiContent);
+                parts.add(new WordPart(WordPart.PartType.ANSI_C, ansiContent.toString()));
+                continue;
+            }
+
+            // Single-quoted string: '...'
+            if (c == '\'') {
+                flushBare(parts, barePart);
+                raw.append(c);
+                advance(); // consume opening '\''
+                StringBuilder singleContent = new StringBuilder();
+                while (pos < input.length() && peek() != '\'') {
+                    char d = peek();
+                    singleContent.append(d);
+                    raw.append(d);
+                    advance();
+                }
+                if (pos >= input.length()) {
+                    throw new LexerException("Unterminated single quote", tl, tc);
+                }
+                raw.append('\'');
+                advance(); // consume closing '\''
+                value.append(singleContent);
+                parts.add(new WordPart(WordPart.PartType.SINGLE_QUOTED, singleContent.toString()));
+                continue;
+            }
+
+            // Double-quoted string: "..."
+            if (c == '"') {
+                flushBare(parts, barePart);
+                raw.append(c);
+                advance(); // consume opening '"'
+                StringBuilder doubleContent = new StringBuilder();
+                while (pos < input.length()) {
+                    char d = peek();
+                    if (d == '"') break;
+                    if (d == '\\' && pos + 1 < input.length()) {
+                        char escaped = input.charAt(pos + 1);
+                        if (escaped == '"' || escaped == '\\' || escaped == '$'
+                                || escaped == '`' || escaped == '\n') {
+                            raw.append('\\').append(escaped);
+                            if (escaped == '\n') {
+                                // Line continuation inside double quotes
+                                advance(); advance();
+                                line++; col = 1;
+                            } else {
+                                doubleContent.append(escaped);
+                                advance(); advance();
+                            }
+                            continue;
+                        }
+                    }
+                    raw.append(d);
+                    doubleContent.append(d);
+                    advance();
+                }
+                if (pos >= input.length()) {
+                    throw new LexerException("Unterminated double quote", tl, tc);
+                }
+                raw.append('"');
+                advance(); // consume closing '"'
+                value.append(doubleContent);
+                parts.add(new WordPart(WordPart.PartType.DOUBLE_QUOTED, doubleContent.toString()));
+                continue;
+            }
+
+            // Backslash outside quotes: escape next char (e.g. '\ ' for literal space)
+            if (c == '\\') {
+                raw.append(c);
+                advance();
+                if (pos >= input.length()) break;
+                char escaped = peek();
+                if (escaped == '\n') {
+                    // Line continuation outside quotes: skip both newline and backslash
+                    raw.append(escaped);
+                    advance();
+                    line++;
+                    col = 1;
+                } else {
+                    raw.append(escaped);
+                    value.append(escaped);
+                    // Treat escaped char as literal single-quoted content so expansions don't touch it
+                    flushBare(parts, barePart);
+                    parts.add(new WordPart(WordPart.PartType.SINGLE_QUOTED, String.valueOf(escaped)));
+                    advance();
+                }
+                continue;
+            }
+
+            // Command substitution $(...) or ${...} outside quotes
             if (c == '$' || c == '`') {
                 raw.append(c);
                 value.append(c);
+                barePart.append(c);
                 advance();
+
                 if (c == '$' && pos < input.length() && peek() == '(') {
-                    // Read balanced $(...)
                     raw.append('(');
                     value.append('(');
+                    barePart.append('(');
                     advance();
-                    appendBalanced('(', ')', raw, value);
+                    appendBalanced('(', ')', raw, value, barePart);
                 } else if (c == '$' && pos < input.length() && peek() == '{') {
-                    // Read balanced ${...}
                     raw.append('{');
                     value.append('{');
+                    barePart.append('{');
                     advance();
-                    appendBalanced('{', '}', raw, value);
-                } else if (c == '$' && pos < input.length() && peek() == '(') {
-                    // arithmetic $((
-                    // handled above by the balanced reader
-                }
-                // backtick: read until next unescaped backtick
-                else if (c == '`') {
+                    appendBalanced('{', '}', raw, value, barePart);
+                } else if (c == '`') {
                     while (pos < input.length()) {
                         char d = peek();
-                        if (d == '`') { raw.append(d); value.append(d); advance(); break; }
+                        if (d == '`') {
+                            raw.append(d); value.append(d); barePart.append(d);
+                            advance();
+                            break;
+                        }
                         if (d == '\\' && pos + 1 < input.length()) {
                             raw.append(d).append(input.charAt(pos + 1));
                             value.append(d).append(input.charAt(pos + 1));
+                            barePart.append(d).append(input.charAt(pos + 1));
                             advance(); advance();
                             continue;
                         }
-                        raw.append(d); value.append(d); advance();
+                        raw.append(d); value.append(d); barePart.append(d);
+                        advance();
                     }
                 }
                 continue;
             }
 
-            // Regular word character
+            // Normal unquoted character
             raw.append(c);
             value.append(c);
+            barePart.append(c);
             advance();
         }
 
-        String rawStr   = raw.toString();
+        flushBare(parts, barePart);
+
+        String rawStr = raw.toString();
         String valueStr = value.toString();
 
-        // Detect assignment: NAME=... at start of token, NAME must be [A-Za-z_][A-Za-z0-9_]*
         TokenType type = isAssignment(valueStr) ? TokenType.ASSIGNMENT_WORD : TokenType.WORD;
+        return new Token(type, valueStr, rawStr, tl, tc, parts);
+    }
 
-        return new Token(type, valueStr, rawStr, tl, tc);
+    private void flushBare(List<WordPart> parts, StringBuilder barePart) {
+        if (barePart.length() > 0) {
+            parts.add(new WordPart(WordPart.PartType.BARE, barePart.toString()));
+            barePart.setLength(0);
+        }
+    }
+
+    /**
+     * Resolves an ANSI-C escape sequence after the initial backslash.
+     */
+    private String resolveAnsiCEscape(char first, StringBuilder raw) {
+        return switch (first) {
+            case 'a' -> "\u0007";
+            case 'b' -> "\b";
+            case 'e', 'E' -> "\u001B";
+            case 'f' -> "\f";
+            case 'n' -> "\n";
+            case 'r' -> "\r";
+            case 't' -> "\t";
+            case 'v' -> "\u000B";
+            case '\\' -> "\\";
+            case '\'' -> "'";
+            case '"' -> "\"";
+            case '?' -> "?";
+            case 'c' -> {
+                if (pos < input.length()) {
+                    char c = peek();
+                    raw.append(c);
+                    advance();
+                    yield String.valueOf((char) (Character.toUpperCase(c) & 0x1F));
+                }
+                yield "c";
+            }
+            case '0', '1', '2', '3', '4', '5', '6', '7' -> {
+                StringBuilder octal = new StringBuilder().append(first);
+                while (octal.length() < 3 && pos < input.length()) {
+                    char c = peek();
+                    if (c >= '0' && c <= '7') {
+                        octal.append(c);
+                        raw.append(c);
+                        advance();
+                    } else {
+                        break;
+                    }
+                }
+                int code = Integer.parseInt(octal.toString(), 8);
+                yield String.valueOf((char) code);
+            }
+            case 'x' -> {
+                StringBuilder hex = new StringBuilder();
+                while (hex.length() < 2 && pos < input.length()) {
+                    char c = peek();
+                    if (isHex(c)) {
+                        hex.append(c);
+                        raw.append(c);
+                        advance();
+                    } else {
+                        break;
+                    }
+                }
+                if (hex.length() > 0) {
+                    int code = Integer.parseInt(hex.toString(), 16);
+                    yield String.valueOf((char) code);
+                }
+                yield "x";
+            }
+            case 'u' -> {
+                StringBuilder hex = new StringBuilder();
+                while (hex.length() < 4 && pos < input.length()) {
+                    char c = peek();
+                    if (isHex(c)) {
+                        hex.append(c);
+                        raw.append(c);
+                        advance();
+                    } else {
+                        break;
+                    }
+                }
+                if (hex.length() > 0) {
+                    int code = Integer.parseInt(hex.toString(), 16);
+                    yield String.valueOf((char) code);
+                }
+                yield "u";
+            }
+            case 'U' -> {
+                StringBuilder hex = new StringBuilder();
+                while (hex.length() < 8 && pos < input.length()) {
+                    char c = peek();
+                    if (isHex(c)) {
+                        hex.append(c);
+                        raw.append(c);
+                        advance();
+                    } else {
+                        break;
+                    }
+                }
+                if (hex.length() > 0) {
+                    int code = Integer.parseInt(hex.toString(), 16);
+                    yield new String(Character.toChars(code));
+                }
+                yield "U";
+            }
+            default -> "\\" + first;
+        };
     }
 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
-    /**
-     * Reads characters until the closing delimiter (tracking nesting), appending to both buffers.
-     */
-    private void appendBalanced(char open, char close, StringBuilder raw, StringBuilder value) {
+    private void appendBalanced(char open, char close, StringBuilder raw, StringBuilder value, StringBuilder bare) {
         int depth = 1;
         while (pos < input.length() && depth > 0) {
             char d = peek();
             raw.append(d);
             value.append(d);
+            bare.append(d);
             advance();
             if (d == open)  depth++;
             if (d == close) depth--;
@@ -461,10 +592,6 @@ public class Lexer {
         }
     }
 
-    /**
-     * Returns true if the character can start a shell operator (and thus terminate a word
-     * when encountered unquoted).
-     */
     private boolean isOperatorStart(char c) {
         return switch (c) {
             case '|', '&', ';', '<', '>', '(', ')', '{', '}' -> true;
@@ -477,10 +604,10 @@ public class Lexer {
         return !Character.isWhitespace(c) && !isOperatorStart(c);
     }
 
-    /**
-     * Returns true if the value looks like a shell variable assignment: {@code NAME=...}.
-     * The name must match {@code [A-Za-z_][A-Za-z0-9_]*}.
-     */
+    private boolean isHex(char c) {
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    }
+
     private boolean isAssignment(String value) {
         int eq = value.indexOf('=');
         if (eq <= 0) return false;

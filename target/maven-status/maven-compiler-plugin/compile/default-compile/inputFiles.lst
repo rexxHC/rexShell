@@ -2,12 +2,15 @@ C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\builtin\Bui
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\builtin\BuiltinRegistry.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\builtin\CdCommand.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\builtin\EchoCommand.java
+C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\builtin\EnvCommand.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\builtin\ExitCommand.java
+C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\builtin\ExportCommand.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\builtin\FalseCommand.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\builtin\PwdCommand.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\builtin\ShellExitException.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\builtin\TrueCommand.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\builtin\TypeCommand.java
+C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\builtin\UnsetCommand.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\environment\Environment.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\executor\ExecutionException.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\executor\Executor.java
@@ -16,6 +19,7 @@ C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\lexer\Lexer
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\lexer\LexerException.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\lexer\Token.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\lexer\TokenType.java
+C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\lexer\WordPart.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\Main.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\parser\ast\AndOr.java
 C:\Users\rezkr\OneDrive\Documents\ShellJava\src\main\java\com\jshell\parser\ast\Assignment.java

@@ -127,4 +127,59 @@ class BuiltinTest {
     void falseReturnsOne() {
         assertEquals(1, new FalseCommand().execute(new String[]{"false"}, env, stdin, System.out, System.err));
     }
+
+    // -----------------------------------------------------------------------
+    // export / unset / env
+    // -----------------------------------------------------------------------
+
+    @Test
+    void exportSetsAndMarksExported() {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        int status = new ExportCommand().execute(
+                new String[]{"export", "TEST_VAR=hello_world"}, env, stdin, out, System.err);
+        assertEquals(0, status);
+        assertEquals("hello_world", env.get("TEST_VAR"));
+        assertTrue(env.isExported("TEST_VAR"));
+    }
+
+    @Test
+    void exportInvalidIdentifier() {
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int status = new ExportCommand().execute(
+                new String[]{"export", "123INVALID=foo"}, env, stdin, System.out, err);
+        assertEquals(1, status);
+        assertTrue(err.toString().contains("not a valid identifier"));
+    }
+
+    @Test
+    void exportListsVariables() {
+        env.export("MY_ALPHA", "val1");
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        int status = new ExportCommand().execute(
+                new String[]{"export"}, env, stdin, out, System.err);
+        assertEquals(0, status);
+        assertTrue(out.toString().contains("declare -x MY_ALPHA=\"val1\""));
+    }
+
+    @Test
+    void unsetRemovesVariable() {
+        env.export("TO_REMOVE", "123");
+        assertTrue(env.isSet("TO_REMOVE"));
+
+        int status = new UnsetCommand().execute(
+                new String[]{"unset", "TO_REMOVE"}, env, stdin, System.out, System.err);
+        assertEquals(0, status);
+        assertFalse(env.isSet("TO_REMOVE"));
+        assertNull(env.get("TO_REMOVE"));
+    }
+
+    @Test
+    void envPrintsExportedVariables() {
+        env.export("ENV_TEST_KEY", "ENV_TEST_VAL");
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        int status = new EnvCommand().execute(
+                new String[]{"env"}, env, stdin, out, System.err);
+        assertEquals(0, status);
+        assertTrue(out.toString().contains("ENV_TEST_KEY=ENV_TEST_VAL"));
+    }
 }

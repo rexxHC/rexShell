@@ -77,15 +77,69 @@ class LexerTest {
     @Test
     void singleQuotes() {
         List<Token> tokens = lex("echo 'hello world'");
-        // Single-quoted content becomes one WORD without quotes
         assertEquals("hello world", tokens.get(1).value());
+        assertEquals(WordPart.PartType.SINGLE_QUOTED, tokens.get(1).parts().get(0).type());
     }
 
     @Test
     void doubleQuotes() {
         List<Token> tokens = lex("echo \"hello world\"");
-        // Double-quoted content retains quotes (Expander will process $-expansions)
-        assertEquals("\"hello world\"", tokens.get(1).value());
+        assertEquals("hello world", tokens.get(1).value());
+        assertEquals("\"hello world\"", tokens.get(1).raw());
+        assertEquals(WordPart.PartType.DOUBLE_QUOTED, tokens.get(1).parts().get(0).type());
+    }
+
+    @Test
+    void ansiCQuotes() {
+        List<Token> tokens = lex("echo $'hello\\nworld'");
+        assertEquals("hello\nworld", tokens.get(1).value());
+        assertEquals(WordPart.PartType.ANSI_C, tokens.get(1).parts().get(0).type());
+    }
+
+    @Test
+    void ansiCOctalAndHex() {
+        List<Token> tokens = lex("echo $'a\\040b\\x20c'");
+        assertEquals("a b c", tokens.get(1).value());
+    }
+
+    @Test
+    void quotedWordMerging() {
+        List<Token> tokens = lex("echo foo\"bar\"'baz'");
+        assertEquals("foobarbaz", tokens.get(1).value());
+        assertEquals(3, tokens.get(1).parts().size());
+        assertEquals(WordPart.PartType.BARE, tokens.get(1).parts().get(0).type());
+        assertEquals(WordPart.PartType.DOUBLE_QUOTED, tokens.get(1).parts().get(1).type());
+        assertEquals(WordPart.PartType.SINGLE_QUOTED, tokens.get(1).parts().get(2).type());
+    }
+
+    @Test
+    void contiguousQuotedStringsMerge() {
+        List<Token> tokens = lex("echo \"hello\"' world'");
+        assertEquals("hello world", tokens.get(1).value());
+        assertEquals(2, tokens.get(1).parts().size());
+    }
+
+    @Test
+    void emptyQuotesPreservedAsWords() {
+        List<Token> tokens = lex("cmd \"\" ''");
+        assertEquals(TokenType.WORD, tokens.get(1).type());
+        assertEquals("", tokens.get(1).value());
+        assertEquals(TokenType.WORD, tokens.get(2).type());
+        assertEquals("", tokens.get(2).value());
+    }
+
+    @Test
+    void escapedSpaceInWord() {
+        List<Token> tokens = lex("echo hello\\ world");
+        assertEquals("hello world", tokens.get(1).value());
+        assertEquals(TokenType.EOF, tokens.get(2).type());
+    }
+
+    @Test
+    void assignmentWithQuotes() {
+        List<Token> tokens = lex("GREETING=\"hello world\"");
+        assertEquals(TokenType.ASSIGNMENT_WORD, tokens.get(0).type());
+        assertEquals("GREETING=hello world", tokens.get(0).value());
     }
 
     @Test

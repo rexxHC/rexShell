@@ -209,7 +209,7 @@ public class Parser {
         redirects.addAll(parseRedirections());
 
         // Command name and arguments
-        while (peek().type() == TokenType.WORD) {
+        while (peek().type() == TokenType.WORD || peek().type() == TokenType.ASSIGNMENT_WORD) {
             words.add(peek().value());
             advance();
 
